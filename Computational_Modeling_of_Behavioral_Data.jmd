@@ -4,11 +4,8 @@
 ## Rescorla-Wagner model
 
 ```julia
-#How can I add unicode caption to label?
-
 using Plots
 using Interact
-
 
 """
 Nₜ: number of trials
@@ -41,8 +38,6 @@ end
 ### softmax function
 
 ```julia
-#How can I add unicode caption to label?
-
 function softmax(β, Δq)
     return 1 / (1+ exp(-β * (Δq)))
 end
@@ -55,11 +50,10 @@ end
     title!("Softmax Function")
 end
 ```
+
 ### interactive plot of Q-learning model
 
 ```julia
-# how can I input P with small subscript A?
-
 """
 Nₜ: number of trials
 α: learning rate
@@ -101,9 +95,14 @@ Pᵣ: probability of getting reward in A
 end
 ```
 
+## Parameter Estimation
+
 ### Optimization with Optim package
 
 ```julia
+"""
+This function returns a vector of choices and a vector of rewards, both of which will be used for parameter estimation
+"""
 
 function generate_qlearning_data(Nₜ, α, β, Pᵣ)
 
@@ -131,7 +130,6 @@ function generate_qlearning_data(Nₜ, α, β, Pᵣ)
     return 𝐜, 𝐫
 end
 ```
-## Parameter Estimation
 
 ```julia
 """
@@ -142,7 +140,8 @@ init_values: [α, β]
 𝐫: 0 (no reward) or 1 (reward) in each Nₜ trial
 
 """
-function func_qlearning(init_values, 𝐜, 𝐫) #needed for passing list as variables for Optim
+
+function func_qlearning(init_values, 𝐜, 𝐫) #needed for parameters to be passed as list for Optim package
 
     Nₜ = length(𝐜)
     Pₐ = zeros(Nₜ) #probabilities of selecting A
@@ -151,7 +150,7 @@ function func_qlearning(init_values, 𝐜, 𝐫) #needed for passing list as var
 
     for t in 1:Nₜ - 1
         Pₐ = softmax(init_values[2], 𝐐[1, t] - 𝐐[2, t])
-        logl += (𝐜[t] == 1) * log(Pₐ) + (𝐜[t] == 2) * log(1 - log(Pₐ))
+        logl += (𝐜[t] == 1) * log(Pₐ) + (𝐜[t] == 2) * log(1 - Pₐ)
         𝐐[𝐜[t], t + 1] = 𝐐[𝐜[t], t] + init_values[1] * (𝐫[t] - 𝐐[𝐜[t], t])
         𝐐[3 - 𝐜[t], t + 1] =  𝐐[3 - 𝐜[t], t]
     end
@@ -159,6 +158,7 @@ function func_qlearning(init_values, 𝐜, 𝐫) #needed for passing list as var
     return (negll = -logl, 𝐐 = 𝐐, Pₐ = Pₐ);
 end
 ```
+
 ```julia
 using Optim
 
@@ -171,27 +171,52 @@ using Optim
     lower = [0.0, 0.0]
     upper = [1.0, 5.0]
     inner_optimizer = GradientDescent()
-    results = optimize(func_qlearning_opt, lower, upper, initial_values, Fminbox(inner_optimizer))
-    #@show optimize(func_qlearning_opt, init_values, lower, upper, LBFGS())
+    results = optimize(func_qlearning_opt, lower, upper, initial_values, Fminbox(inner_optimizer));
 end
 ```
 
-#### optimization with JuMP and Ipopt
+#### optimization with BlackBoxOptim package
+
 ```julia
+using BlackBoxOptim
+
+@manipulate for Nₜ in 0:5:200, α in 0:0.05:1, β in 0:0.25:5, Pᵣ in 0:0.05:1
+    𝐜, 𝐫 = generate_qlearning_data(Nₜ, α, β, Pᵣ)
+    
+    func_qlearning_opt(init_values) = func_qlearning(init_values, 𝐜, 𝐫).negll
+
+    results = bboptimize(func_qlearning_opt; SearchRange = [(0.0, 1.0), (0.0, 5.0)], NumDimensions = 2);
+    best_candidate(results)
+end
+```
+
+We can also compare performances when using different optimizers. 
+
+```julia
+func_qlearning_opt(init_values) = func_qlearning([0.3, 0.4], 𝐜, 𝐫).negll
+compare_optimizers(func_qlearning_opt; SearchRange = [(0.0, 1.0), (0.0, 5.0)], NumDimensions = 2);
+```
+
+#### optimization with JuMP and Ipopt packages
+
+```julia
+#The following code block generates error. How can I fix it?
+
 using JuMP, Ipopt, ForwardDiff
-#@manipulate for Nₜ in 0:5:200, α1 in 0:0.05:1, β1 in 0:0.25:5, Pᵣ in 0:0.05:1
 
-𝐜, 𝐫 = generate_qlearning_data(50, 0.5, 0.5, 0.5)
+𝐜, 𝐫 = generate_qlearning_data(50, 0.6, 0.7, 0.5)
 
-func_qlearning_JuMP(α, β) = func_qlearning((α, β), 𝐜, 𝐫).negll
+func_qlearning_JuMP(α, β) = func_qlearning((α, β), 𝐜, 𝐫).negll #JuMP needs separate variables, not a list
+
 m = Model(Ipopt.Optimizer)
 register(m, :func_qlearning_JuMP, 2, func_qlearning_JuMP, autodiff=true)
 
 @variable(m, 0.0 <= x <= 1.0, start=rand())
 @variable(m, 0.0 <= y <= 5.0, start=5*rand())
-
-@NLobjective(m, Min, func_qlearning_JuMP)
-optimize!(m)
+@NLobjective(m, Min, func_qlearning_JuMP(x, y))
+@show optimize!(m)
 println("α = ", value(x), " β = ", value(y))
+```
 
+```julia
 ```
