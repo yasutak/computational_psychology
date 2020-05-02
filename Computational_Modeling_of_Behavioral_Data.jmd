@@ -177,17 +177,37 @@ end
 #### optimization with JuMP and Ipopt
 ```julia
 using JuMP, Ipopt, ForwardDiff
-#@manipulate for Nₜ in 0:5:200, α1 in 0:0.05:1, β1 in 0:0.25:5, Pᵣ in 0:0.05:1
 
-𝐜, 𝐫 = generate_qlearning_data(50, 0.5, 3.0, 0.5)
 
-func_qlearning_JuMP(α, β) = func_qlearning((α, β), 𝐜, 𝐫).negll
+@manipulate for Nₜ in 0:5:200, α1 in 0:0.05:1, β1 in 0:0.25:5, Pᵣ in 0:0.05:1
 
-m = Model(Ipopt.Optimizer)
-register(m, :func_qlearning_JuMP, 2, func_qlearning_JuMP, autodiff=true)
+    𝐜, 𝐫 = generate_qlearning_data(Nₜ, α1, β1, Pᵣ)
+    func_qlearning_JuMP(α, β) = func_qlearning((α, β), 𝐜, 𝐫).negll #JuMP requires separate arguments, not lists
 
-@variable(m, 0.0 <= α <= 1.0, start=rand(), base_name = "learning_rate")
-@variable(m, 0.0 <= β <= 5.0, start=5*rand(), base_name = "inverse_temperature")
+    m = Model(Ipopt.Optimizer)
+    register(m, :func_qlearning_JuMP, 2, func_qlearning_JuMP, autodiff=true)
 
-@NLobjective(m, Min, func_qlearning_JuMP(α, β))
-optimize!(m)
+    @variable(m, 0.0 <= α <= 1.0, start=rand(), base_name = "learning_rate")
+    @variable(m, 0.0 <= β <= 5.0, start=5*rand(), base_name = "inverse_temperature")
+
+    @NLobjective(m, Min, func_qlearning_JuMP(α, β))
+
+    measure_value = Inf
+    target_α = -1
+    target_β = -1
+        #run 10 times and pick up the best result
+    for i in 1:10
+
+        optimize!(m)
+
+        if objective_value(m) < measure_value
+
+            measure_value = objective_value(m)
+            target_α = value(α)
+            target_β = value(β)
+        end
+        print(""," α = ", value(α), " β = ", value(β))
+    end
+
+    print(""," α = ", value(α), " β = ", value(β))
+end
