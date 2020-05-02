@@ -116,10 +116,10 @@ function generate_qlearning_data(Nₜ, α, β, Pᵣ)
 
         if rand() < Pₐ
             𝐜[t] = 1 #choose A
-            𝐫[t] = (rand(Float64) < P[1])
+            𝐫[t] = (rand() < P[1])
         else
             𝐜[t] = 2 #choose B
-            𝐫[t] = Int(rand(Float64) < P[2])
+            𝐫[t] = Int(rand() < P[2])
         end
 
         𝐐[𝐜[t], t+1] = 𝐐[𝐜[t], t] + α * (𝐫[t] - 𝐐[𝐜[t], t])
@@ -138,7 +138,6 @@ init_values: [α, β]
 β: inverse temperature
 𝐜: vector of choices in each Nₜ trial in 1(A) or 2(B)
 𝐫: 0 (no reward) or 1 (reward) in each Nₜ trial
-
 """
 function func_qlearning(init_values, 𝐜, 𝐫) #needed for passing list as variables for Optim
 
@@ -157,6 +156,7 @@ function func_qlearning(init_values, 𝐜, 𝐫) #needed for passing list as var
     return (negll = -logl, 𝐐 = 𝐐, Pₐ = Pₐ);
 end
 ```
+
 ```julia
 using Optim
 
@@ -182,14 +182,12 @@ using JuMP, Ipopt, ForwardDiff
 𝐜, 𝐫 = generate_qlearning_data(50, 0.5, 0.5, 0.5)
 
 func_qlearning_JuMP(α, β) = func_qlearning((α, β), 𝐜, 𝐫).negll
+
 m = Model(Ipopt.Optimizer)
 register(m, :func_qlearning_JuMP, 2, func_qlearning_JuMP, autodiff=true)
 
-@variable(m, 0.0 <= x <= 1.0, start=rand())
-@variable(m, 0.0 <= y <= 5.0, start=5*rand())
+@variable(m, 0.0 <= α <= 1.0, start=rand(), base_name = "learning_rate")
+@variable(m, 0.0 <= β <= 5.0, start=5*rand(), base_name = "inverse_temperature"))
 
 @NLobjective(m, Min, func_qlearning_JuMP)
-optimize!(m)
-println("α = ", value(x), " β = ", value(y))
-
-```
+optimize!(m)#Thanks Satoshi Terasaki
