@@ -4,7 +4,6 @@
 ## Rescorla-Wagner model
 
 ```julia
-#How can I add unicode caption to label?
 
 using Plots
 using Interact
@@ -41,7 +40,6 @@ end
 ### softmax function
 
 ```julia
-#How can I add unicode caption to label?
 
 function softmax(β, Δq)
     return 1 / (1+ exp(-β * (Δq)))
