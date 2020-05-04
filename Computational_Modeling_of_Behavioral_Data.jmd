@@ -161,7 +161,16 @@ end
 ## Parameter Estimation
 
 ### optimization with JuMP and Ipopt
+
+
 ```julia
+
+#if you get no package error for Ipopt, comment out the follwoing lines and run again
+#import Pkg
+#Pkg.add("Pkg")
+#Pkg.add("Ipopt")
+#Pkg.build("Ipopt")
+
 using JuMP, Ipopt, ForwardDiff
 
 #@manipulate for Nₜ in 0:50:1000, α1 in 0:0.05:1, β1 in 0:0.25:5, Pᵣ in 0:0.05:1
@@ -181,7 +190,7 @@ print(""," α = ", value(α), " β = ", value(β))
 #end
 ```
 
-### optimization with Optim
+#### optimization with Optim
 ```julia
 using Optim
 
@@ -199,7 +208,7 @@ using Optim
 end
 ```
 
-### optimization with BlackBoxOptim, which is designed for blackbox functions, so this part is only for demonstration purpose
+#### optimization with BlackBoxOptim, which is designed for blackbox functions, so this part is only for demonstration purpose
 
 ```julia
 using BlackBoxOptim
@@ -305,29 +314,119 @@ end
 
 ```julia
 
-function random_choice_simulation(Nₜ, Pᵣ, seed=1234)
+function random_choice_simulation(Nₜ, Pₐ, seed=1234)
 
     rng = MersenneTwister(seed)
 
-    Pₐ = rand(rng, Nₜ)
     𝐜 = 2 .- Int.(rand(rng, Nₜ) .< Pₐ) #dot notation in Julia signifies elemnet-wise operation
-    𝐫 = Int.(Pₐ .< Pᵣ)
 
-    return (Pₐ = Pₐ, 𝐜 = 𝐜, 𝐫 = 𝐫)
+    return (Pₐ = Pₐ, 𝐜 = 𝐜)
 end
 
 ```
+
 ####plot
 
 ```julia
-@manipulate for Nₜ in 0:5:200, Pᵣ in 0:0.05:1, seed in 1:1:1234
+@manipulate for Nₜ in 0:5:200, Pₐ in 0:0.05:1
 
-    Pₐ = random_choice_simulation(Nₜ, Pᵣ, seed).Pₐ
-
-    plot(Pₐ, label="P(a = A)", color="orange")
+    plot([Pₐ for i in range(1, stop=Nₜ)], label="P(a = A)", color="orange")
     ylabel!("P(a = A)")
     ylims!((0, 1))
     title!("Random Choice Model")
 
 end
+```
+
+### model comparison
+
+#### preparation
+
+```julia
+
+"""
+ϵ: error rate
+𝐜: vector of choices in each Nₜ trial in 1(A) or 2(B)
+𝐫: 0 (no reward) or 1 (reward) in each Nₜ trial
+
+when given ϵ, 𝐜, and 𝐫, returns log likelihood and Pₐ
+"""
+function func_wsls(ϵ, 𝐜, 𝐫)
+
+    Nₜ = length(𝐜)
+    Pₐ = zeros(Nₜ) #probabilities of selecting A
+    Pₐ[1] = 0.5
+    logl = 0 #initial value of log likelihood
+
+    for t in 1:Nₜ - 1
+        logl += (𝐜[t] == 1) * log(Pₐ[t]) + (𝐜[t] == 2) * log(1 - Pₐ[t])
+
+        #select A with reward
+        if 𝐜[t] == 1 &&   𝐫[t] == 1
+
+            Pₐ[t + 1] = 1 - ϵ
+
+        #select B with no reward
+        elseif  𝐜[t] == 2 &&   𝐫[t] == 0
+
+            Pₐ[t + 1] = 1 - ϵ
+
+        #select A with no reward
+        elseif  𝐜[t] == 1 &&   𝐫[t] == 0
+
+            Pₐ[t + 1] = ϵ
+
+        #select B with reward
+        elseif 𝐜[t] == 2 &&   𝐫[t] == 1
+
+            Pₐ[t + 1] = ϵ
+
+        end
+    end
+
+    return (ll = logl, Pₐ = Pₐ);
+end
+
+
+"""
+Pₐ: probability of choosing A
+𝐜: vector of choices in each Nₜ trial in 1(A) or 2(B)
+𝐫: 0 (no reward) or 1 (reward) in each Nₜ trial
+
+when given Pₐ, 𝐜, and 𝐫, returns log likelihood and Pₐ
+"""
+function func_random_choice(Pₐ, 𝐜, 𝐫)
+
+    Nₜ = length(𝐜)
+    logl = 0
+
+    for t in 1:Nₜ
+        logl += (𝐜[t] == 1) * log(Pₐ) + (𝐜[t] == 2) * log(1 - Pₐ)
+    end
+
+    return logl
+
+end
+```
+
+#### parameter estimation with JuMP
+
+```julia
+using JuMP, Ipopt, ForwardDiff
+
+@manipulate for Nₜ in 0:50:1000, α1 in 0:0.05:1, β1 in 0:0.25:5, Pᵣ in 0:0.05:1
+
+    𝐜, 𝐫 = generate_qlearning_data(Nₜ, α1, β1, Pᵣ)
+    func_qlearning_JuMP(α, β) = func_qlearning((α, β), 𝐜, 𝐫).negll #JuMP requires separate arguments, not a list
+
+    m = Model(Ipopt.Optimizer)
+    register(m, :func_qlearning_JuMP, 2, func_qlearning_JuMP, autodiff=true)
+
+    @variable(m, 0.0 <= α <= 1.0, start=rand(), base_name = "learning_rate")
+    @variable(m, 0.0 <= β <= 5.0, start=5*rand(), base_name = "inverse_temperature")
+
+    @NLobjective(m, Min, func_qlearning_JuMP(α, β))
+    optimize!(m)
+    print(""," α = ", value(α), " β = ", value(β))
+
 ```
